@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DocumentController extends Controller
 {
@@ -21,23 +22,26 @@ class DocumentController extends Controller
             'original_filename' => $file->getClientOriginalName(),
         ]);
 
-        ProcessDocumentExtraction::dispatch($document);
+        ProcessDocumentExtraction::dispatch($document)
+            ->onConnection(config('services.document_extraction.queue_connection'));
 
-        return to_route('documents.show', $document)->with('success', 'Arquivo enviado. A extração começou.');
+        return to_route('documents.show', $document)->with('success', 'File uploaded. Extraction has started.');
     }
 
     public function show(Request $request, Document $document): Response
     {
         abort_unless($document->user_id === $request->user()->id, 404);
+
         return Inertia::render('Documents/Show', ['document' => $document]);
     }
 
-    public function download(Request $request, Document $document): mixed
+    public function preview(Request $request, Document $document): BinaryFileResponse
     {
         abort_unless($document->user_id === $request->user()->id, 404);
-        return response()->download(
+
+        return response()->file(
             Storage::disk('local')->path($document->file_path),
-            $document->original_filename,
+            ['Content-Disposition' => 'inline'],
         );
     }
 }

@@ -12,13 +12,13 @@ class GeminiExtractionService
     {
         $key = config('services.gemini.key');
         if (! $key) {
-            throw new RuntimeException('GEMINI_API_KEY não configurada.');
+            throw new RuntimeException('GEMINI_API_KEY is not configured.');
         }
 
         $response = $this->client($key)->post('/v1beta/models/'.config('services.gemini.model').':generateContent', [
             'contents' => [[
                 'parts' => [
-                    ['text' => 'Extraia os dados desta nota fiscal. Retorne somente os campos solicitados. Use null quando um campo não estiver legível.'],
+                    ['text' => 'Extract the data from this invoice. Return only the requested fields. Use null when a field is unreadable.'],
                     ['inline_data' => ['mime_type' => $mimeType, 'data' => base64_encode((string) file_get_contents($path))]],
                 ],
             ]],
@@ -43,7 +43,7 @@ class GeminiExtractionService
 
         $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
         if (! is_string($text)) {
-            throw new RuntimeException('A API do Gemini não retornou dados estruturados.');
+            throw new RuntimeException('The Gemini API did not return structured data.');
         }
 
         return json_decode($text, true, 512, JSON_THROW_ON_ERROR);
