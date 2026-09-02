@@ -1,298 +1,58 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePoll } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 
 const props = defineProps({ document: Object });
 const copied = ref(false);
+const showJson = ref(false);
 const data = computed(() => props.document.extracted_json || {});
 const json = computed(() => JSON.stringify(data.value, null, 2));
 const vendor = computed(() => data.value.vendor || { name: data.value.vendor_name });
 const customer = computed(() => data.value.customer || {});
-const lineItems = computed(() => data.value.line_items || []);
-
-const summaryFields = computed(() => [
-    { label: 'Invoice number', value: data.value.invoice_number },
-    { label: 'Purchase order', value: data.value.purchase_order_number },
-    { label: 'Issue date', value: data.value.issue_date || data.value.date },
-    { label: 'Due date', value: data.value.due_date },
-    { label: 'Currency', value: data.value.currency },
-    { label: 'Payment status', value: data.value.payment_status },
-    { label: 'Subtotal', value: formatAmount(data.value.subtotal) },
-    { label: 'Discount', value: formatAmount(data.value.discount_amount) },
-    { label: 'Tax', value: formatAmount(data.value.tax_amount) },
-    { label: 'Shipping', value: formatAmount(data.value.shipping_amount) },
-    { label: 'Total', value: formatAmount(data.value.total_amount) },
-    { label: 'Amount due', value: formatAmount(data.value.amount_due) },
+const items = computed(() => data.value.line_items || []);
+const summary = computed(() => [
+    ['Invoice number', data.value.invoice_number], ['Purchase order', data.value.purchase_order_number],
+    ['Issue date', data.value.issue_date || data.value.date], ['Due date', data.value.due_date],
+    ['Currency', data.value.currency], ['Payment status', data.value.payment_status],
+    ['Subtotal', amount(data.value.subtotal)], ['Discount', amount(data.value.discount_amount)],
+    ['Tax', amount(data.value.tax_amount)], ['Total', amount(data.value.total_amount)], ['Amount due', amount(data.value.amount_due)],
 ]);
-
-const bankFields = computed(() => [
-    { label: 'Account holder', value: data.value.bank_details?.account_holder },
-    { label: 'Bank', value: data.value.bank_details?.bank_name },
-    { label: 'Routing number', value: data.value.bank_details?.routing_number },
-    { label: 'Account number', value: data.value.bank_details?.account_number },
-    { label: 'IBAN', value: data.value.bank_details?.iban },
-    { label: 'SWIFT / BIC', value: data.value.bank_details?.swift_bic },
-    { label: 'Payment reference', value: data.value.bank_details?.payment_reference },
-].filter(field => field.value));
-
-const paymentFields = computed(() => [
-    { label: 'Payment terms', value: data.value.payment_terms },
-    { label: 'Payment instructions', value: data.value.payment_instructions },
-].filter(field => field.value));
-
-function displayValue(value) {
-    return value ?? 'Not identified';
-}
-
-function formatAmount(value) {
-    if (value === null || value === undefined) {
-        return null;
-    }
-
-    if (!data.value.currency) {
-        return String(value);
-    }
-
-    try {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: data.value.currency,
-        }).format(value);
-    } catch {
-        return `${data.value.currency} ${value}`;
-    }
-}
-
-function formatAddress(party) {
-    const address = party?.address || {};
-
-    return [
-        address.line_1,
-        address.line_2,
-        [address.city, address.state, address.postal_code].filter(Boolean).join(', '),
-        address.country,
-    ].filter(Boolean);
-}
-
-function partyTitle(party) {
-    return party?.company_name || party?.name || 'Not identified';
-}
-
-function copyJson() {
-    navigator.clipboard.writeText(json.value);
-    copied.value = true;
-    setTimeout(() => copied.value = false, 1600);
-}
-
-function exportCsv() {
-    const columns = [
-        'description',
-        'sku',
-        'quantity',
-        'unit',
-        'unit_price',
-        'discount_amount',
-        'tax_rate',
-        'tax_amount',
-        'amount',
-        'service_period_start',
-        'service_period_end',
-    ];
-    const rows = [columns, ...lineItems.value.map(item => columns.map(column => item[column]))];
-    const csv = rows
-        .map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))
-        .join('\n');
-    const link = window.document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    link.download = `${props.document.original_filename}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-}
-
+const payment = computed(() => [['Payment terms', data.value.payment_terms], ['Instructions', data.value.payment_instructions]].filter(([, value]) => value));
+const bank = computed(() => [['Account holder', data.value.bank_details?.account_holder], ['Bank', data.value.bank_details?.bank_name], ['Routing', data.value.bank_details?.routing_number], ['Account', data.value.bank_details?.account_number], ['IBAN', data.value.bank_details?.iban], ['SWIFT / BIC', data.value.bank_details?.swift_bic], ['Reference', data.value.bank_details?.payment_reference]].filter(([, value]) => value));
+function amount(value) { if (value === null || value === undefined) return null; try { return data.value.currency ? new Intl.NumberFormat('en-US', { style: 'currency', currency: data.value.currency }).format(value) : String(value); } catch { return `${data.value.currency} ${value}`; } }
+function display(value) { return value ?? 'Not identified'; }
+function partyTitle(party) { return party?.company_name || party?.name || 'Not identified'; }
+function address(party) { const a = party?.address || {}; return [a.line_1, a.line_2, [a.city, a.state, a.postal_code].filter(Boolean).join(', '), a.country].filter(Boolean); }
+function copyJson() { navigator.clipboard.writeText(json.value); copied.value = true; setTimeout(() => copied.value = false, 1600); }
+function exportCsv() { const columns = ['description', 'sku', 'quantity', 'unit', 'unit_price', 'discount_amount', 'tax_rate', 'tax_amount', 'amount', 'service_period_start', 'service_period_end']; const rows = [columns, ...items.value.map(item => columns.map(column => item[column]))]; const csv = rows.map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\n'); const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); link.download = `${props.document.original_filename}.csv`; link.click(); URL.revokeObjectURL(link.href); }
 const { start, stop } = usePoll(2500, { only: ['document'] }, { autoStart: false });
 watch(() => props.document.status, status => status === 'pending' ? start() : stop(), { immediate: true });
+onUnmounted(() => stop());
 </script>
 
 <template>
     <AuthenticatedLayout>
         <Head :title="document.original_filename" />
+        <div class="bg-[#f4f4f1] text-[#111214]">
+            <main class="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:py-14">
+                <div class="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div class="min-w-0"><Link :href="route('dashboard')" class="text-sm text-[#72756e] hover:text-[#111214]">← Back to workspace</Link><p class="mt-5 text-xs font-bold uppercase tracking-[.22em] text-[#8b8e87]">Extraction result</p><h1 class="mt-2 truncate text-3xl font-semibold tracking-[-.03em] sm:text-4xl">{{ document.original_filename }}</h1></div><div class="flex gap-2"><button :disabled="!document.extracted_json" class="rounded-xl border border-[#d6d7d1] bg-white px-4 py-3 text-sm font-semibold transition hover:border-[#111214] disabled:opacity-40" @click="showJson = true">View JSON</button><button :disabled="!document.extracted_json" class="rounded-xl bg-[#111214] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#2a2b2e] disabled:opacity-40" @click="exportCsv">Export CSV</button></div></div>
 
-        <div class="min-h-screen bg-[#f4f6f3] text-[#17251d]">
-            <main class="mx-auto max-w-7xl px-5 py-10 sm:px-8">
-                <div class="mb-8 flex flex-wrap items-center justify-between gap-4">
-                    <div class="min-w-0">
-                        <Link :href="route('dashboard')" class="text-sm text-[#718078] hover:text-[#18372b]">
-                            ← Back to workspace
-                        </Link>
-                        <h1 class="mt-4 max-w-xl truncate text-3xl font-semibold">
-                            {{ document.original_filename }}
-                        </h1>
-                    </div>
-                    <div class="flex gap-2">
-                        <button
-                            :disabled="!document.extracted_json"
-                            class="rounded-lg border border-[#ccd8cf] bg-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
-                            @click="exportCsv"
-                        >
-                            Export CSV
-                        </button>
-                        <button
-                            :disabled="!document.extracted_json"
-                            class="rounded-lg bg-[#18372b] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
-                            @click="copyJson"
-                        >
-                            {{ copied ? 'Copied' : 'Copy JSON' }}
-                        </button>
-                    </div>
-                </div>
+                <div v-if="document.status === 'pending'" class="rounded-[1.75rem] bg-[#111214] p-8 text-white shadow-[0_20px_60px_rgba(17,18,20,.14)] sm:p-14"><div class="mx-auto max-w-xl text-center"><div class="relative mx-auto mb-8 flex h-24 w-24 items-center justify-center"><span class="absolute inset-0 animate-ping rounded-full bg-[#d7ff45]/20"></span><span class="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-[#d7ff45] text-2xl text-[#111214]">✦</span></div><p class="text-xs font-bold uppercase tracking-[.24em] text-[#d7ff45]">AI extraction in progress</p><h2 class="mt-4 text-3xl font-semibold tracking-tight">Reading your document<span class="animate-pulse">...</span></h2><p class="mx-auto mt-4 max-w-md text-sm leading-6 text-white/55">We are identifying fields, totals, line items, and payment details. This usually takes less than a minute.</p><div class="mt-8 h-2 overflow-hidden rounded-full bg-white/10"><div class="h-full w-2/3 animate-[pulse_2s_ease-in-out_infinite] rounded-full bg-[#d7ff45]"></div></div><div class="mt-4 flex justify-between text-xs text-white/40"><span>Analyzing securely</span><span>Please keep this tab open</span></div></div></div>
 
-                <div class="grid items-start gap-5 lg:grid-cols-[.85fr_1.15fr]">
-                    <div class="flex min-h-[600px] items-center justify-center rounded-2xl border border-[#dce4de] bg-[#dfe5e0] p-4 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)]">
-                        <iframe
-                            v-if="document.original_filename.toLowerCase().endsWith('.pdf')"
-                            :src="route('documents.preview', document.id)"
-                            class="h-full min-h-[568px] w-full rounded-lg bg-white"
-                            title="Document preview"
-                        ></iframe>
-                        <div v-else class="text-center text-[#718078]">
-                            <div class="mb-3 text-5xl">▧</div>
-                            Preview available for PDFs
-                            <div class="mt-2 text-xs">{{ document.original_filename }}</div>
-                        </div>
-                    </div>
+                <div v-else-if="document.status === 'failed'" class="rounded-[1.75rem] border border-[#f0c9c3] bg-[#fff7f5] p-10 text-center"><div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#f7d8d2] text-xl text-[#a34d3d]">!</div><h2 class="mt-5 text-2xl font-semibold">We could not process this file</h2><p class="mt-2 text-sm text-[#686b65]">Please return to the workspace and upload it again.</p><Link :href="route('dashboard')" class="mt-6 inline-flex rounded-xl bg-[#111214] px-5 py-3 text-sm font-semibold text-white">Upload another file</Link></div>
 
-                    <div class="rounded-2xl border border-[#dce4de] bg-white p-6 sm:p-8">
-                        <div class="flex items-start justify-between gap-4 border-b border-[#edf0ed] pb-6">
-                            <div>
-                                <p class="text-xs font-bold uppercase tracking-[.18em] text-[#9aa79f]">Extracted data</p>
-                                <p class="mt-2 text-sm text-[#718078]">
-                                    {{ document.status === 'pending' ? 'Analyzing your document...' : document.status === 'failed' ? 'We could not process this file.' : 'Review the fields before exporting.' }}
-                                </p>
-                            </div>
-                            <span
-                                class="mt-1 h-3 w-3 shrink-0 rounded-full"
-                                :class="document.status === 'processed' ? 'bg-[#55a66c]' : document.status === 'failed' ? 'bg-[#d97860]' : 'animate-pulse bg-[#d6a84f]'"
-                            ></span>
-                        </div>
-
-                        <div v-if="document.status === 'processed'" class="grid gap-8 pt-8">
-                            <section>
-                                <h2 class="text-base font-semibold">Invoice summary</h2>
-                                <div class="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
-                                    <div v-for="field in summaryFields" :key="field.label" class="border-b border-[#edf0ed] pb-3">
-                                        <p class="text-xs text-[#9aa79f]">{{ field.label }}</p>
-                                        <p class="mt-1 break-words text-sm font-medium">{{ displayValue(field.value) }}</p>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section class="grid gap-4 sm:grid-cols-2">
-                                <div class="rounded-xl bg-[#f5f7f4] p-5">
-                                    <p class="text-xs font-bold uppercase tracking-widest text-[#9aa79f]">Vendor</p>
-                                    <p class="mt-3 font-semibold">{{ partyTitle(vendor) }}</p>
-                                    <p v-if="vendor.name && vendor.company_name" class="mt-1 text-sm text-[#627168]">{{ vendor.name }}</p>
-                                    <div class="mt-3 grid gap-1 text-sm text-[#627168]">
-                                        <p v-for="line in formatAddress(vendor)" :key="line">{{ line }}</p>
-                                        <p v-if="vendor.tax_id">Tax ID: {{ vendor.tax_id }}</p>
-                                        <p v-if="vendor.email">{{ vendor.email }}</p>
-                                        <p v-if="vendor.phone">{{ vendor.phone }}</p>
-                                        <p v-if="vendor.website">{{ vendor.website }}</p>
-                                    </div>
-                                </div>
-
-                                <div class="rounded-xl bg-[#f5f7f4] p-5">
-                                    <p class="text-xs font-bold uppercase tracking-widest text-[#9aa79f]">Bill to</p>
-                                    <p class="mt-3 font-semibold">{{ partyTitle(customer) }}</p>
-                                    <p v-if="customer.name && customer.company_name" class="mt-1 text-sm text-[#627168]">{{ customer.name }}</p>
-                                    <div class="mt-3 grid gap-1 text-sm text-[#627168]">
-                                        <p v-for="line in formatAddress(customer)" :key="line">{{ line }}</p>
-                                        <p v-if="customer.tax_id">Tax ID: {{ customer.tax_id }}</p>
-                                        <p v-if="customer.email">{{ customer.email }}</p>
-                                        <p v-if="customer.phone">{{ customer.phone }}</p>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section>
-                                <div class="flex items-center justify-between gap-4">
-                                    <h2 class="text-base font-semibold">Line items</h2>
-                                    <span class="text-xs text-[#87958c]">{{ lineItems.length }} items</span>
-                                </div>
-                                <div class="mt-4 overflow-x-auto rounded-xl border border-[#e4eae5]">
-                                    <table class="min-w-full divide-y divide-[#e4eae5] text-left text-sm">
-                                        <thead class="bg-[#f5f7f4] text-xs text-[#718078]">
-                                            <tr>
-                                                <th class="px-4 py-3 font-medium">Description</th>
-                                                <th class="px-4 py-3 font-medium">Period</th>
-                                                <th class="px-4 py-3 text-right font-medium">Qty</th>
-                                                <th class="px-4 py-3 text-right font-medium">Unit price</th>
-                                                <th class="px-4 py-3 text-right font-medium">Amount</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-[#edf0ed]">
-                                            <tr v-for="(item, index) in lineItems" :key="`${item.sku || item.description}-${index}`">
-                                                <td class="min-w-56 px-4 py-3 align-top">
-                                                    <p class="font-medium">{{ displayValue(item.description) }}</p>
-                                                    <p v-if="item.sku" class="mt-1 text-xs text-[#87958c]">SKU: {{ item.sku }}</p>
-                                                </td>
-                                                <td class="whitespace-nowrap px-4 py-3 align-top text-[#627168]">
-                                                    {{ item.service_period_start || '—' }}<br v-if="item.service_period_end">
-                                                    <span v-if="item.service_period_end">to {{ item.service_period_end }}</span>
-                                                </td>
-                                                <td class="whitespace-nowrap px-4 py-3 text-right align-top">{{ displayValue(item.quantity) }} {{ item.unit || '' }}</td>
-                                                <td class="whitespace-nowrap px-4 py-3 text-right align-top">{{ displayValue(formatAmount(item.unit_price ?? item.price)) }}</td>
-                                                <td class="whitespace-nowrap px-4 py-3 text-right align-top font-medium">{{ displayValue(formatAmount(item.amount ?? item.price)) }}</td>
-                                            </tr>
-                                            <tr v-if="!lineItems.length">
-                                                <td colspan="5" class="px-4 py-8 text-center text-[#87958c]">No line items identified.</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </section>
-
-                            <section v-if="paymentFields.length || bankFields.length" class="grid gap-4 sm:grid-cols-2">
-                                <div v-if="paymentFields.length" class="rounded-xl border border-[#e4eae5] p-5">
-                                    <h2 class="text-base font-semibold">Payment</h2>
-                                    <div class="mt-4 grid gap-4">
-                                        <div v-for="field in paymentFields" :key="field.label">
-                                            <p class="text-xs text-[#9aa79f]">{{ field.label }}</p>
-                                            <p class="mt-1 whitespace-pre-line text-sm">{{ field.value }}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div v-if="bankFields.length" class="rounded-xl border border-[#e4eae5] p-5">
-                                    <h2 class="text-base font-semibold">Bank details</h2>
-                                    <div class="mt-4 grid gap-3">
-                                        <div v-for="field in bankFields" :key="field.label" class="flex justify-between gap-4 text-sm">
-                                            <span class="text-[#87958c]">{{ field.label }}</span>
-                                            <span class="break-all text-right font-medium">{{ field.value }}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section v-if="data.notes?.length">
-                                <h2 class="text-base font-semibold">Notes</h2>
-                                <ul class="mt-3 grid gap-2 text-sm text-[#627168]">
-                                    <li v-for="note in data.notes" :key="note">{{ note }}</li>
-                                </ul>
-                            </section>
-
-                            <details class="rounded-xl bg-[#f5f7f4] p-4">
-                                <summary class="cursor-pointer text-sm font-semibold">Raw JSON</summary>
-                                <pre class="mt-4 max-h-80 overflow-auto text-xs leading-6 text-[#52655a]">{{ json }}</pre>
-                            </details>
-                        </div>
-
-                        <div v-else class="mt-8 flex min-h-56 items-center justify-center rounded-xl bg-[#f5f7f4] text-sm text-[#87958c]">
-                            {{ document.status === 'pending' ? 'This may take a few moments...' : 'Please upload the file again.' }}
-                        </div>
-                    </div>
+                <div v-else class="grid gap-5">
+                    <section class="rounded-[1.75rem] border border-[#deded8] bg-white p-6 sm:p-8"><div class="mb-6 flex items-center justify-between"><div><p class="text-xs font-bold uppercase tracking-[.22em] text-[#8b8e87]">Invoice overview</p><h2 class="mt-2 text-xl font-semibold">Key details</h2></div><span class="rounded-full bg-[#e9f5c9] px-3 py-1 text-xs font-semibold text-[#3f5311]">Processed</span></div><div class="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-4"><div v-for="([label, value]) in summary" :key="label" class="border-b border-[#ededE8] pb-3"><p class="text-xs text-[#8b8e87]">{{ label }}</p><p class="mt-1 break-words text-sm font-semibold">{{ display(value) }}</p></div></div></section>
+                    <section class="grid gap-5 lg:grid-cols-2"><div v-for="([title, party]) in [['Vendor', vendor], ['Bill to', customer]]" :key="title" class="rounded-[1.5rem] border border-[#deded8] bg-white p-6"><p class="text-xs font-bold uppercase tracking-[.22em] text-[#8b8e87]">{{ title }}</p><h2 class="mt-3 text-lg font-semibold">{{ partyTitle(party) }}</h2><p v-if="party.name && party.company_name" class="mt-1 text-sm text-[#686b65]">{{ party.name }}</p><div class="mt-4 grid gap-1 text-sm leading-6 text-[#686b65]"><p v-for="line in address(party)" :key="line">{{ line }}</p><p v-if="party.tax_id">Tax ID: {{ party.tax_id }}</p><p v-if="party.email">{{ party.email }}</p><p v-if="party.phone">{{ party.phone }}</p><p v-if="party.website">{{ party.website }}</p></div></div></section>
+                    <section class="rounded-[1.75rem] border border-[#deded8] bg-white p-6 sm:p-8"><div class="flex items-center justify-between"><div><p class="text-xs font-bold uppercase tracking-[.22em] text-[#8b8e87]">Invoice details</p><h2 class="mt-2 text-xl font-semibold">Line items</h2></div><span class="text-sm text-[#8b8e87]">{{ items.length }} items</span></div><div class="mt-6 overflow-x-auto rounded-xl border border-[#e3e4de]"><table class="min-w-full divide-y divide-[#e3e4de] text-left text-sm"><thead class="bg-[#f7f7f3] text-xs text-[#686b65]"><tr><th class="px-4 py-3 font-medium">Description</th><th class="px-4 py-3 font-medium">Service period</th><th class="px-4 py-3 text-right font-medium">Qty</th><th class="px-4 py-3 text-right font-medium">Unit price</th><th class="px-4 py-3 text-right font-medium">Amount</th></tr></thead><tbody class="divide-y divide-[#ededE8]"><tr v-for="(item, index) in items" :key="`${item.sku || item.description}-${index}`"><td class="min-w-64 px-4 py-4 align-top"><p class="font-medium">{{ display(item.description) }}</p><p v-if="item.sku" class="mt-1 text-xs text-[#8b8e87]">SKU: {{ item.sku }}</p></td><td class="whitespace-nowrap px-4 py-4 align-top text-[#686b65]">{{ item.service_period_start || '—' }}<br v-if="item.service_period_end"><span v-if="item.service_period_end">to {{ item.service_period_end }}</span></td><td class="whitespace-nowrap px-4 py-4 text-right align-top">{{ display(item.quantity) }} {{ item.unit || '' }}</td><td class="whitespace-nowrap px-4 py-4 text-right align-top">{{ display(amount(item.unit_price ?? item.price)) }}</td><td class="whitespace-nowrap px-4 py-4 text-right align-top font-semibold">{{ display(amount(item.amount ?? item.price)) }}</td></tr><tr v-if="!items.length"><td colspan="5" class="px-4 py-10 text-center text-[#8b8e87]">No line items identified.</td></tr></tbody></table></div></section>
+                    <section v-if="payment.length || bank.length" class="grid gap-5 lg:grid-cols-2"><div v-if="payment.length" class="rounded-[1.5rem] border border-[#deded8] bg-white p-6"><p class="text-xs font-bold uppercase tracking-[.22em] text-[#8b8e87]">Payment</p><div class="mt-4 grid gap-4"> <div v-for="([label, value]) in payment" :key="label"><p class="text-xs text-[#8b8e87]">{{ label }}</p><p class="mt-1 whitespace-pre-line text-sm">{{ value }}</p></div></div></div><div v-if="bank.length" class="rounded-[1.5rem] border border-[#deded8] bg-white p-6"><p class="text-xs font-bold uppercase tracking-[.22em] text-[#8b8e87]">Bank details</p><div class="mt-4 grid gap-3"> <div v-for="([label, value]) in bank" :key="label" class="flex justify-between gap-4 text-sm"><span class="text-[#8b8e87]">{{ label }}</span><span class="break-all text-right font-semibold">{{ value }}</span></div></div></div></section>
+                    <section v-if="data.notes?.length" class="rounded-[1.5rem] border border-[#deded8] bg-white p-6"><p class="text-xs font-bold uppercase tracking-[.22em] text-[#8b8e87]">Notes</p><ul class="mt-4 grid gap-2 text-sm text-[#686b65]"><li v-for="note in data.notes" :key="note">{{ note }}</li></ul></section>
+                    <div class="flex items-center justify-between rounded-2xl border border-[#deded8] bg-[#f0f0eb] px-5 py-4"><div><p class="text-sm font-semibold">Need the complete payload?</p><p class="mt-1 text-xs text-[#686b65]">Open the raw structured response without cluttering the page.</p></div><button class="rounded-lg bg-[#111214] px-4 py-2 text-sm font-semibold text-white" @click="showJson = true">Open JSON</button></div>
                 </div>
             </main>
         </div>
+
+        <div v-if="showJson" class="fixed inset-0 z-50 flex items-center justify-center bg-[#111214]/75 p-4" role="dialog" aria-modal="true" aria-label="Raw JSON" @click.self="showJson = false"><div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-[#18191b] text-white shadow-2xl"><div class="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><p class="text-xs font-bold uppercase tracking-[.2em] text-[#d7ff45]">Raw payload</p><h2 class="mt-1 text-lg font-semibold">Complete extraction JSON</h2></div><button class="rounded-lg p-2 text-white/60 hover:bg-white/10 hover:text-white" aria-label="Close JSON" @click="showJson = false">✕</button></div><pre class="min-h-0 flex-1 overflow-auto p-5 text-xs leading-6 text-white/75">{{ json }}</pre><div class="flex justify-end gap-2 border-t border-white/10 px-5 py-4"><button class="rounded-lg border border-white/15 px-4 py-2 text-sm text-white/75 hover:text-white" @click="showJson = false">Close</button><button class="rounded-lg bg-[#d7ff45] px-4 py-2 text-sm font-semibold text-[#111214]" @click="copyJson">{{ copied ? 'Copied' : 'Copy JSON' }}</button></div></div></div>
     </AuthenticatedLayout>
 </template>
