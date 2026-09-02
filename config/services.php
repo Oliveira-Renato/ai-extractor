@@ -6,6 +6,9 @@ return [
         'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
         'url' => env('GEMINI_API_URL', 'https://generativelanguage.googleapis.com'),
     ],
+    'document_extraction' => [
+        'queue_connection' => env('DOCUMENT_EXTRACTION_QUEUE_CONNECTION', 'background'),
+    ],
     'lemon_squeezy' => [
         'checkout_url' => env('LEMON_SQUEEZY_CHECKOUT_URL'),
     ],
